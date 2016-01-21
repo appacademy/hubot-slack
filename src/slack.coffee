@@ -14,14 +14,11 @@ class SlackBot extends Adapter
     @robot = robot
 
   run: ->
-    exitProcessOnDisconnect = !!process.env.HUBOT_SLACK_EXIT_ON_DISCONNECT
-
     # Take our options from the environment, and set otherwise suitable defaults
     options =
       token: process.env.HUBOT_SLACK_TOKEN
-      autoReconnect: !exitProcessOnDisconnect
+      autoReconnect: true
       autoMark: true
-      exitOnDisconnect: exitProcessOnDisconnect
 
     return @robot.logger.error "No services token provided to Hubot" unless options.token
     return @robot.logger.error "v2 services token provided, please follow the upgrade instructions" unless (options.token.substring(0, 5) in ['xoxb-', 'xoxp-'])
@@ -40,6 +37,7 @@ class SlackBot extends Adapter
     @client.on 'message', @.message
     @client.on 'userChange', @.userChange
     @robot.brain.on 'loaded', @.brainLoaded
+    @client.on 'raw_message', @.reaction
 
     @robot.on 'slack-attachment', @.customMessage
     @robot.on 'slack.attachment', @.customMessage
@@ -100,17 +98,18 @@ class SlackBot extends Adapter
     @emit "connected"
 
   clientClose: =>
-    if @options.exitOnDisconnect
-      @robot.logger.info 'Slack client connection was closed, exiting hubot process'
-      @client.removeListener 'error', @.error
-      @client.removeListener 'loggedIn', @.loggedIn
-      @client.removeListener 'open', @.open
-      @client.removeListener 'close', @.clientClose
-      @client.removeListener 'message', @.message
-      @client.removeListener 'userChange', @.userChange
-      process.exit 1
-    else
-      @robot.logger.info 'Slack client closed, waiting for reconnect'
+    # Don't actually do anything since we may reconnect in the future
+    @robot.logger.info 'Slack client closed, waiting for reconnect'
+
+  reaction: (msg) =>
+    # if message is a reaction
+    if msg.type == "reaction_added"
+      # get channel and user data
+      user = @robot.brain.userForId msg.user
+      channel = @client.getChannelGroupOrDMByID msg.item.channel if msg.item.channel
+      # populate event data
+      reaction = message: msg, user: user, channel: channel
+      @robot.emit 'reaction', reaction
 
   message: (msg) =>
     # Ignore our own messages
